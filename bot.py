@@ -4,6 +4,10 @@ import base64
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 # Config
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -55,7 +59,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await processing_msg.edit_text(preview, parse_mode="Markdown", reply_markup=reply_markup)
+            await processing_msg.edit_text(preview, reply_markup=reply_markup)
         else:
             await processing_msg.edit_text("❌ বায়োডাটা এক্সট্রাক্ট করতে পারিনি। অন্য একটি ছবি পাঠান।")
             
@@ -120,28 +124,39 @@ Use null for any missing fields. Return ONLY valid JSON, no other text."""
     
     return None
 
+def escape_markdown(text: str) -> str:
+    """Escape special Markdown characters"""
+    if not text:
+        return "N/A"
+    # Just return plain text, no escaping needed since we don't use parse_mode
+    return str(text)
+
 def format_biodata_preview(biodata: dict) -> str:
     """Format biodata for Telegram preview"""
-    return f"""📋 *এক্সট্রাক্ট করা বায়োডাটা:*
+    def get_field(key):
+        val = biodata.get(key)
+        return str(val) if val else "N/A"
+    
+    return f"""📋 এক্সট্রাক্ট করা বায়োডাটা:
 
-👤 নাম: {biodata.get('name') or 'N/A'}
-⚧ লিঙ্গ: {biodata.get('gender') or 'N/A'}
-🎂 জন্মতারিখ: {biodata.get('dateOfBirth') or 'N/A'}
-📍 বিভাগ: {biodata.get('division') or 'N/A'}
-📍 জেলা: {biodata.get('district') or 'N/A'}
-📍 উপজেলা: {biodata.get('upazila') or 'N/A'}
-🎓 শিক্ষা: {biodata.get('education') or 'N/A'}
-💼 পেশা: {biodata.get('occupation') or 'N/A'}
-💰 আয়: {biodata.get('monthlyIncome') or 'N/A'}
-💍 বৈবাহিক: {biodata.get('maritalStatus') or 'N/A'}
-👨 বাবা: {biodata.get('fatherAlive') or 'N/A'}
-👩 মা: {biodata.get('motherAlive') or 'N/A'}
-👫 ভাইবোন: {biodata.get('siblings') or 'N/A'}
-🕌 নামাজ: {biodata.get('prayerHabit') or 'N/A'}
-📱 ফোন: {biodata.get('phoneNumber') or 'N/A'}
-📱 অভিভাবক: {biodata.get('guardianPhone') or 'N/A'}
+👤 নাম: {get_field('name')}
+⚧ লিঙ্গ: {get_field('gender')}
+🎂 জন্মতারিখ: {get_field('dateOfBirth')}
+📍 বিভাগ: {get_field('division')}
+📍 জেলা: {get_field('district')}
+📍 উপজেলা: {get_field('upazila')}
+🎓 শিক্ষা: {get_field('education')}
+💼 পেশা: {get_field('occupation')}
+💰 আয়: {get_field('monthlyIncome')}
+💍 বৈবাহিক: {get_field('maritalStatus')}
+👨 বাবা: {get_field('fatherAlive')}
+👩 মা: {get_field('motherAlive')}
+👫 ভাইবোন: {get_field('siblings')}
+🕌 নামাজ: {get_field('prayerHabit')}
+📱 ফোন: {get_field('phoneNumber')}
+📱 অভিভাবক: {get_field('guardianPhone')}
 
-_সেভ করতে নিচের বাটনে ক্লিক করুন_"""
+সেভ করতে নিচের বাটনে ক্লিক করুন"""
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks"""

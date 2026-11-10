@@ -1,0 +1,18 @@
+[Unit]
+Description=Zibonsathi Biodata Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/data/projects/zibonsathi-bot
+Environment=TELEGRAM_TOKEN=8620693992:AAGWKV5q1ZSYOKMQqm4FUOK71Kg2vYo0CHU
+Environment=GEMINI_API_KEY=AQ.Ab8RN6I1zrALlSoEhnrVsB0xy9mIqnq2KKDCk3TMtcR2jG5A9A
+Environment=ZIBONSATHI_API_URL=https://zibonsathi.com/api/webhook/import-biodata
+Environment=ZIBONSATHI_API_KEY=YR6TY613wqhRrelRLCdVPjZVWIGNxhneSFTaiA
+ExecStart=/usr/bin/python3 bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
