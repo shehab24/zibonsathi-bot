@@ -95,7 +95,7 @@ Use null for any missing fields. Return ONLY valid JSON, no other text."""
 
 async def extract_biodata_from_image(base64_image: str) -> dict:
     """Extract biodata using Gemini Vision API"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
     
     payload = {
         "contents": [{
@@ -110,7 +110,7 @@ async def extract_biodata_from_image(base64_image: str) -> dict:
 
 async def extract_biodata_from_text(raw_text: str) -> dict:
     """Extract biodata from raw text using Gemini"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
     
     payload = {
         "contents": [{
