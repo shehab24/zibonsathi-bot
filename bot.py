@@ -21,8 +21,9 @@ pending_biodatas = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🙏 স্বাগতম জিবনসাথী বায়োডাটা বটে!\n\n"
-        "একটি বায়োডাটার ছবি পাঠান, আমি এক্সট্রাক্ট করে দেখাবো।\n"
-        "তারপর আপনি সেভ করতে পারবেন।"
+        "📷 বায়োডাটার ছবি পাঠান, অথবা\n"
+        "📝 বায়োডাটা টেক্সট পেস্ট করুন\n\n"
+        "আমি এক্সট্রাক্ট করে দেখাবো, তারপর আপনি সেভ করতে পারবেন।"
     )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,7 +42,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base64_image = base64.b64encode(photo_bytes).decode('utf-8')
         
         # Call Gemini API
-        biodata = await extract_biodata_gemini(base64_image)
+        biodata = await extract_biodata_from_image(base64_image)
         
         if biodata:
             # Store pending biodata
@@ -67,11 +68,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error: {e}")
         await processing_msg.edit_text(f"❌ ত্রুটি হয়েছে: {str(e)[:100]}")
 
-async def extract_biodata_gemini(base64_image: str) -> dict:
-    """Extract biodata using Gemini Vision API"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
-    
-    prompt = """Extract biodata from this Bangladeshi matrimonial biodata image. 
+BIODATA_PROMPT = """Extract biodata from this Bangladeshi matrimonial biodata. 
 Return ONLY a valid JSON object with these fields:
 - name (string)
 - gender (string: "male" or "female")
@@ -96,31 +93,57 @@ Return ONLY a valid JSON object with these fields:
 
 Use null for any missing fields. Return ONLY valid JSON, no other text."""
 
+async def extract_biodata_from_image(base64_image: str) -> dict:
+    """Extract biodata using Gemini Vision API"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    
     payload = {
         "contents": [{
             "parts": [
                 {"inline_data": {"mime_type": "image/jpeg", "data": base64_image}},
-                {"text": prompt}
+                {"text": BIODATA_PROMPT}
             ]
         }]
     }
+    
+    return await call_gemini(url, payload)
+
+async def extract_biodata_from_text(raw_text: str) -> dict:
+    """Extract biodata from raw text using Gemini"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": f"{BIODATA_PROMPT}\n\nBiodata text:\n{raw_text}"}
+            ]
+        }]
+    }
+    
+    return await call_gemini(url, payload)
+
+async def call_gemini(url: str, payload: dict) -> dict:
+    """Call Gemini API and parse JSON response"""
+    import re
     
     headers = {
         "Content-Type": "application/json",
         "X-goog-api-key": GEMINI_API_KEY
     }
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        result = response.json()
-        
-        if "candidates" in result:
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-            # Extract JSON from response
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', text)
-            if json_match:
-                return json.loads(json_match.group())
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            result = response.json()
+            
+            if "candidates" in result:
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+                # Extract JSON from response
+                json_match = re.search(r'\{[\s\S]*\}', text)
+                if json_match:
+                    return json.loads(json_match.group())
+    except Exception as e:
+        print(f"Gemini API error: {e}")
     
     return None
 
@@ -229,11 +252,48 @@ async def save_biodata(biodata: dict) -> dict:
     return None
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages"""
-    await update.message.reply_text(
-        "দয়া করে একটি বায়োডাটার ছবি পাঠান।\n"
-        "আমি ছবি থেকে তথ্য এক্সট্রাক্ট করে দেখাবো।"
-    )
+    """Handle text messages - extract biodata from raw text"""
+    chat_id = update.message.chat_id
+    text = update.message.text
+    
+    # Check if text is long enough to be a biodata (at least 50 chars)
+    if len(text) < 50:
+        await update.message.reply_text(
+            "দয়া করে একটি বায়োডাটার ছবি পাঠান অথবা সম্পূর্ণ বায়োডাটা টেক্সট পেস্ট করুন।\n"
+            "আমি ছবি বা টেক্সট থেকে তথ্য এক্সট্রাক্ট করে দেখাবো।"
+        )
+        return
+    
+    # Send processing message
+    processing_msg = await update.message.reply_text("⏳ বায়োডাটা প্রসেস হচ্ছে...")
+    
+    try:
+        # Call Gemini API for text extraction
+        biodata = await extract_biodata_from_text(text)
+        
+        if biodata:
+            # Store pending biodata
+            pending_biodatas[chat_id] = biodata
+            
+            # Format preview
+            preview = format_biodata_preview(biodata)
+            
+            # Create inline keyboard
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ সেভ করুন", callback_data="save"),
+                    InlineKeyboardButton("❌ বাতিল", callback_data="cancel")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await processing_msg.edit_text(preview, reply_markup=reply_markup)
+        else:
+            await processing_msg.edit_text("❌ বায়োডাটা এক্সট্রাক্ট করতে পারিনি। সঠিক ফরম্যাটে বায়োডাটা পাঠান।")
+            
+    except Exception as e:
+        print(f"Text extraction error: {e}")
+        await processing_msg.edit_text(f"❌ ত্রুটি হয়েছে: {str(e)[:100]}")
 
 def main():
     """Start the bot"""
