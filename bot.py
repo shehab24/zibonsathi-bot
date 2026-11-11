@@ -68,30 +68,44 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error: {e}")
         await processing_msg.edit_text(f"❌ ত্রুটি হয়েছে: {str(e)[:100]}")
 
-BIODATA_PROMPT = """Extract biodata from this Bangladeshi matrimonial biodata. 
-Return ONLY a valid JSON object with these fields:
-- name (string)
-- gender (string: "male" or "female")
-- dateOfBirth (string: YYYY-MM-DD format)
-- division (string)
-- district (string)
-- upazila (string)
-- education (string)
-- occupation (string)
-- monthlyIncome (string)
-- maritalStatus (string: "never_married", "divorced", or "widowed")
-- fatherAlive (string: "yes" or "no")
-- motherAlive (string: "yes" or "no")
-- siblings (number)
-- prayerHabit (string)
-- beardOrHijab (string)
-- mazhab (string)
-- aboutMe (string)
-- partnerPreferences (string)
-- phoneNumber (string)
-- guardianPhone (string)
+BIODATA_PROMPT = """Extract biodata from this Bangladeshi matrimonial biodata text/image.
+Be thorough - extract ALL available information. 
 
-Use null for any missing fields. Return ONLY valid JSON, no other text."""
+Return ONLY a valid JSON object with these fields:
+- name (string: person's name, null if says "পরে জানানো হবে" or not mentioned)
+- gender (string: "male" or "female" - detect from context like "পাত্রী"=female, "পাত্র"=male, "bride"=female, "groom"=male)
+- dateOfBirth (string: YYYY-MM-DD format, use YYYY-01-01 if only year given)
+- height (string: e.g. "5'4\"" or "৫ ফুট ৪ ইঞ্চি")
+- complexion (string: skin tone like "ফর্সা", "শ্যামলা", "উজ্জল")
+- division (string: বিভাগ)
+- district (string: জেলা)
+- upazila (string: উপজেলা/থানা)
+- education (string: full education details)
+- occupation (string: পেশা/job)
+- monthlyIncome (string: মাসিক আয়)
+- maritalStatus (string: "never_married" for অবিবাহিত, "divorced" for তালাকপ্রাপ্ত, "widowed" for বিধবা/বিপত্নীক)
+- fatherAlive (string: "yes" or "no" - check for "বেঁচে নেই"/"মৃত"=no)
+- fatherOccupation (string: বাবার পেশা)
+- motherAlive (string: "yes" or "no")
+- motherOccupation (string: মায়ের পেশা)
+- siblings (number: total brothers + sisters)
+- siblingsDetails (string: details about brothers and sisters)
+- prayerHabit (string: নামাজ/prayer info)
+- beardOrHijab (string: for female check হিজাব/বোরকা/নিকাব, for male check দাড়ি)
+- mazhab (string: মাযহাব like হানাফী)
+- aboutMe (string: personality description, combine all personal traits mentioned)
+- partnerPreferences (string: what they want in partner - age, height, education, profession, location preferences)
+- phoneNumber (string: মোবাইল/ফোন number)
+- guardianPhone (string: অভিভাবকের নম্বর)
+- email (string: ইমেইল if any)
+
+IMPORTANT: 
+- Extract beardOrHijab if হিজাব/বোরকা/নিকাব/দাড়ি mentioned anywhere
+- Extract aboutMe from personality descriptions like "মিশুক", "হাসিখুশি", "পরিশ্রমী" etc.
+- Extract partnerPreferences from "EXPECTATION" or "পাত্র/পাত্রী চাই" sections
+- Use null ONLY if truly not mentioned (not if says "পরে জানানো হবে")
+
+Return ONLY valid JSON, no other text."""
 
 async def extract_biodata_from_image(base64_image: str) -> dict:
     """Extract biodata using Gemini Vision API"""
@@ -156,15 +170,22 @@ def escape_markdown(text: str) -> str:
 
 def format_biodata_preview(biodata: dict) -> str:
     """Format biodata for Telegram preview"""
-    def get_field(key):
+    def get_field(key, max_len=None):
         val = biodata.get(key)
-        return str(val) if val else "N/A"
+        if not val:
+            return "N/A"
+        text = str(val)
+        if max_len and len(text) > max_len:
+            return text[:max_len] + "..."
+        return text
     
-    return f"""📋 এক্সট্রাক্ট করা বায়োডাটা:
+    preview = f"""📋 এক্সট্রাক্ট করা বায়োডাটা:
 
 👤 নাম: {get_field('name')}
 ⚧ লিঙ্গ: {get_field('gender')}
 🎂 জন্মতারিখ: {get_field('dateOfBirth')}
+📏 উচ্চতা: {get_field('height')}
+🎨 গায়ের রং: {get_field('complexion')}
 📍 বিভাগ: {get_field('division')}
 📍 জেলা: {get_field('district')}
 📍 উপজেলা: {get_field('upazila')}
@@ -172,14 +193,22 @@ def format_biodata_preview(biodata: dict) -> str:
 💼 পেশা: {get_field('occupation')}
 💰 আয়: {get_field('monthlyIncome')}
 💍 বৈবাহিক: {get_field('maritalStatus')}
-👨 বাবা: {get_field('fatherAlive')}
-👩 মা: {get_field('motherAlive')}
+👨 বাবা: {get_field('fatherAlive')} ({get_field('fatherOccupation')})
+👩 মা: {get_field('motherAlive')} ({get_field('motherOccupation')})
 👫 ভাইবোন: {get_field('siblings')}
 🕌 নামাজ: {get_field('prayerHabit')}
+🧕 হিজাব/দাড়ি: {get_field('beardOrHijab')}
+📖 মাযহাব: {get_field('mazhab')}
 📱 ফোন: {get_field('phoneNumber')}
 📱 অভিভাবক: {get_field('guardianPhone')}
+📧 ইমেইল: {get_field('email')}
+
+📝 নিজের সম্পর্কে: {get_field('aboutMe', 150)}
+
+💑 পাত্র/পাত্রী চাহিদা: {get_field('partnerPreferences', 150)}
 
 সেভ করতে নিচের বাটনে ক্লিক করুন"""
+    return preview
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks"""
@@ -216,6 +245,8 @@ async def save_biodata(biodata: dict) -> dict:
         "displayName": biodata.get("name"),
         "gender": biodata.get("gender"),
         "dateOfBirth": biodata.get("dateOfBirth"),
+        "height": biodata.get("height"),
+        "complexion": biodata.get("complexion"),
         "division": biodata.get("division"),
         "district": biodata.get("district"),
         "upazila": biodata.get("upazila"),
@@ -224,8 +255,11 @@ async def save_biodata(biodata: dict) -> dict:
         "monthlyIncome": biodata.get("monthlyIncome"),
         "maritalStatus": biodata.get("maritalStatus"),
         "fatherAlive": biodata.get("fatherAlive"),
+        "fatherOccupation": biodata.get("fatherOccupation"),
         "motherAlive": biodata.get("motherAlive"),
+        "motherOccupation": biodata.get("motherOccupation"),
         "siblings": biodata.get("siblings"),
+        "siblingsDetails": biodata.get("siblingsDetails"),
         "prayerHabit": biodata.get("prayerHabit"),
         "beardOrHijab": biodata.get("beardOrHijab"),
         "mazhab": biodata.get("mazhab"),
@@ -233,6 +267,7 @@ async def save_biodata(biodata: dict) -> dict:
         "partnerPreferences": biodata.get("partnerPreferences"),
         "phoneNumber": biodata.get("phoneNumber"),
         "guardianPhone": biodata.get("guardianPhone"),
+        "email": biodata.get("email"),
         "source": "telegram-bot"
     }
     
